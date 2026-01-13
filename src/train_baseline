@@ -1,6 +1,7 @@
 import sqlite3
 import numpy as np
 import pandas as pd
+from pathlib import Path
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder
@@ -37,7 +38,6 @@ def main() -> None:
       country,
       acquisition_channel,
       industry,
-      is_pro_by_pred,
       dashboard_views_30d,
       sms_sent_30d,
       sms_failed_30d,
@@ -116,12 +116,12 @@ def main() -> None:
     y_pred = (y_prob >= threshold).astype(int)
 
     print("\nConfusion matrix at threshold=0.50:")
-    print(confusion_matrix(y_test, y_pred))
+    cm = confusion_matrix(y_test, y_pred)
+    print(cm)
 
     print("\nClassification report:")
     print(classification_report(y_test, y_pred, digits=3))
 
-    # Top coefficients (interpretability)
     ohe = clf.named_steps["prep"].named_transformers_["cat"].named_steps["onehot"]
     cat_feature_names = ohe.get_feature_names_out(categorical_cols)
     feature_names = np.concatenate([np.array(numeric_cols), cat_feature_names])
@@ -132,6 +132,24 @@ def main() -> None:
 
     print("\nTop 15 drivers by absolute coefficient:")
     print(coef_df.sort_values("abs_coef", ascending=False).head(15)[["feature", "coef"]])
+
+    Path("reports").mkdir(exist_ok=True)
+
+    with open("reports/baseline_metrics.txt", "w", encoding="utf-8") as f:
+        f.write("StockRadar – Baseline Model Metrics (Logistic Regression)\n")
+        f.write("Dataset: merchant_health_features (Pro merchants only)\n")
+        f.write("Split: test_size=0.25, stratify=y, random_state=42\n")
+        f.write(f"Threshold: {threshold:.2f}\n\n")
+        f.write(f"ROC-AUC: {auc:.3f}\n")
+        f.write(f"Precision@10%: {p_at_10:.3f}\n")
+        f.write(f"Lift@10%: {lift_10:.2f}x\n\n")
+        tn, fp, fn, tp = cm.ravel()
+        f.write("Confusion Matrix:\n")
+        f.write(f"TN={tn} FP={fp}\nFN={fn} TP={tp}\n")
+
+    coef_df.sort_values("abs_coef", ascending=False)[["feature", "coef", "abs_coef"]].to_csv(
+        "reports/top_coefficients.csv", index=False
+    )
 
 
 if __name__ == "__main__":

@@ -1,0 +1,12 @@
+StockRadar – Baseline Model Metrics (Logistic Regression)
+Dataset: merchant_health_features (Pro merchants only)
+Split: test_size=0.25, stratify=y, random_state=42
+Threshold: 0.50
+
+ROC-AUC: 0.820
+Precision@10%: 0.700
+Lift@10%: 2.34x
+
+Confusion Matrix:
+TN=51 FP=24
+FN=4 TP=28

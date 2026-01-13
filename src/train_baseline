@@ -1,0 +1,138 @@
+import sqlite3
+import numpy as np
+import pandas as pd
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score, confusion_matrix, classification_report
+
+
+DB_PATH = "data/processed/stockradar.db"
+
+
+def precision_at_k(y_true: np.ndarray, y_score: np.ndarray, k: float) -> float:
+    n = len(y_true)
+    k_n = max(1, int(np.floor(k * n)))
+    idx = np.argsort(-y_score)[:k_n]
+    return float(y_true[idx].mean())
+
+
+def lift_at_k(y_true: np.ndarray, y_score: np.ndarray, k: float) -> float:
+    base_rate = float(y_true.mean())
+    if base_rate == 0:
+        return float("nan")
+    return precision_at_k(y_true, y_score, k) / base_rate
+
+
+def main() -> None:
+    conn = sqlite3.connect(DB_PATH)
+
+    df = pd.read_sql("""
+    SELECT
+      merchant_id,
+      country,
+      acquisition_channel,
+      industry,
+      is_pro_by_pred,
+      dashboard_views_30d,
+      sms_sent_30d,
+      sms_failed_30d,
+      integration_errors_30d,
+      sms_fail_rate_30d,
+      days_since_last_dashboard,
+      recovered_sales_30d,
+      roi_ratio_30d,
+      churn_by_90
+    FROM merchant_health_features
+    WHERE is_pro_by_pred = 1;
+    """, conn)
+
+    conn.close()
+
+    df = df.drop(columns=["merchant_id"])
+
+    y = df["churn_by_90"].astype(int).values
+    X = df.drop(columns=["churn_by_90"])
+
+    numeric_cols = [
+        "dashboard_views_30d",
+        "sms_sent_30d",
+        "sms_failed_30d",
+        "integration_errors_30d",
+        "sms_fail_rate_30d",
+        "days_since_last_dashboard",
+        "recovered_sales_30d",
+        "roi_ratio_30d",
+    ]
+    categorical_cols = ["country", "acquisition_channel", "industry"]
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("num", Pipeline(steps=[
+                ("imputer", SimpleImputer(strategy="median"))
+            ]), numeric_cols),
+            ("cat", Pipeline(steps=[
+                ("imputer", SimpleImputer(strategy="most_frequent")),
+                ("onehot", OneHotEncoder(handle_unknown="ignore"))
+            ]), categorical_cols),
+        ],
+        remainder="drop"
+    )
+
+    model = LogisticRegression(
+        max_iter=2000,
+        class_weight="balanced",
+        solver="lbfgs"
+    )
+
+    clf = Pipeline(steps=[
+        ("prep", preprocessor),
+        ("model", model)
+    ])
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y,
+        test_size=0.25,
+        random_state=42,
+        stratify=y
+    )
+
+    clf.fit(X_train, y_train)
+    y_prob = clf.predict_proba(X_test)[:, 1]
+
+    auc = roc_auc_score(y_test, y_prob)
+    p_at_10 = precision_at_k(y_test, y_prob, 0.10)
+    lift_10 = lift_at_k(y_test, y_prob, 0.10)
+
+    print(f"Test ROC-AUC: {auc:.3f}")
+    print(f"Precision@10%: {p_at_10:.3f}")
+    print(f"Lift@10%: {lift_10:.2f}x")
+
+    threshold = 0.50
+    y_pred = (y_prob >= threshold).astype(int)
+
+    print("\nConfusion matrix at threshold=0.50:")
+    print(confusion_matrix(y_test, y_pred))
+
+    print("\nClassification report:")
+    print(classification_report(y_test, y_pred, digits=3))
+
+    # Top coefficients (interpretability)
+    ohe = clf.named_steps["prep"].named_transformers_["cat"].named_steps["onehot"]
+    cat_feature_names = ohe.get_feature_names_out(categorical_cols)
+    feature_names = np.concatenate([np.array(numeric_cols), cat_feature_names])
+
+    coefs = clf.named_steps["model"].coef_.ravel()
+    coef_df = pd.DataFrame({"feature": feature_names, "coef": coefs})
+    coef_df["abs_coef"] = coef_df["coef"].abs()
+
+    print("\nTop 15 drivers by absolute coefficient:")
+    print(coef_df.sort_values("abs_coef", ascending=False).head(15)[["feature", "coef"]])
+
+
+if __name__ == "__main__":
+    main()

@@ -16,7 +16,7 @@ The app was experiencing a "leaky bucket" problem. Despite constant new signups,
 2. **Low Value Realisation:**  
    Merchants not seeing enough "Recovered Sales" to justify the $29 per month subscription cost.
 
-## 🛠 My Process
+## My Process
 
 1. **Data Modeling:**  
    Incorporated billing data with raw app activity logs into a "Customer 360" view.
@@ -48,7 +48,7 @@ By focusing on the top 10% highest-risk merchants, the model is able to identify
 
 A logistic regression model was selected to prioritise interpretability and practical decision-making. The resulting coefficients clearly showcase whether churn risk is driven by technical issues or low engagement, allowing teams to respond with appropriate interventions.
 
-## ⚙️ Tech Stack
+## Tech Stack
 
 - **SQL:** Data cleaning, deduplication, and monthly usage aggregations.
 - **Python:** Feature engineering and machine learning.
